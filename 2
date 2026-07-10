@@ -1,0 +1,86 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+plt.rcParams['font.sans-serif'] = ['SimHei']
+plt.rcParams['axes.unicode_minus'] = False
+
+url = "https://archive.ics.uci.edu/ml/machine-learning-databases/00381/PRSA_data_2010.1.1-2014.12.31.csv"
+air = pd.read_csv(url)
+
+air['datetime'] = pd.to_datetime(air[['year','month','day','hour']])
+air.set_index('datetime', inplace=True)
+air.drop(columns=['No','year','month','day','hour'], inplace=True)
+
+air['pm2.5'] = air['pm2.5'].ffill()
+for col in ['DEWP','TEMP','PRES','Iws','Is','Ir']:
+    air[col] = air[col].fillna(air[col].median())
+
+Q1, Q3 = air['pm2.5'].quantile(0.25), air['pm2.5'].quantile(0.75)
+IQR = Q3 - Q1
+outliers = (air['pm2.5'] < Q1 - 1.5*IQR) | (air['pm2.5'] > Q3 + 1.5*IQR)
+air.loc[outliers, 'pm2.5'] = air['pm2.5'].median()
+print("替换异常值数量:", outliers.sum())
+
+air = air.drop_duplicates()
+air['cbwd'] = air['cbwd'].str.upper()
+air['pm2.5'] = air['pm2.5'].round(1)
+air['TEMP'] = air['TEMP'].round(1)
+air['PRES'] = air['PRES'].round(1)
+
+numeric_air = air.select_dtypes(include='number')
+corr = numeric_air.corr()
+print("\n与 PM2.5 的相关系数:\n", corr['pm2.5'].sort_values(ascending=False))
+
+plt.figure(figsize=(12,4))
+monthly = air['pm2.5'].resample('ME').mean()
+plt.plot(monthly.index, monthly.values, color='red', linewidth=1)
+plt.title('月均 PM2.5 浓度 (2010-2014)')
+plt.ylabel('PM2.5 (μg/m³)')
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+wind_avg = air.groupby('cbwd', observed=False)['pm2.5'].mean().sort_values()
+plt.figure(figsize=(8,5))
+wind_avg.plot(kind='bar', color='steelblue', edgecolor='black')
+plt.title('各风向平均 PM2.5')
+plt.ylabel('PM2.5 (μg/m³)')
+plt.xticks(rotation=0)
+plt.grid(axis='y', alpha=0.5)
+plt.tight_layout()
+plt.show()
+
+sample = air.sample(min(5000, len(air)))
+plt.figure(figsize=(7,5))
+plt.scatter(sample['TEMP'], sample['pm2.5'], alpha=0.3, c='darkorange', edgecolors='none')
+plt.title('PM2.5 与 温度 散点图')
+plt.xlabel('温度 (℃)')
+plt.ylabel('PM2.5 (μg/m³)')
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(8,6))
+sns.heatmap(corr, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5, square=True)
+plt.title('相关性热力图')
+plt.tight_layout()
+plt.show()
+
+air['month'] = air.index.month
+season_map = {12:'冬季',1:'冬季',2:'冬季',3:'春季',4:'春季',5:'春季',
+              6:'夏季',7:'夏季',8:'夏季',9:'秋季',10:'秋季',11:'秋季'}
+air['season'] = air['month'].map(season_map)
+season_avg = air.groupby('season')['pm2.5'].mean().reindex(['春季','夏季','秋季','冬季'])
+
+plt.figure(figsize=(6,5))
+season_avg.plot(kind='bar', color=['green','red','orange','blue'], edgecolor='black')
+plt.title('各季节平均 PM2.5')
+plt.ylabel('PM2.5 (μg/m³)')
+plt.xticks(rotation=0)
+plt.grid(axis='y', alpha=0.4)
+plt.tight_layout()
+plt.show()
+
+print("分析完成。")
